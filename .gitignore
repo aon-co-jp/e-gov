@@ -1,1 +1,5 @@
 /target
+.env
+*.local.env
+research-report.json
+marketing-drafts.json
