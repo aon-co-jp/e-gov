@@ -56,6 +56,8 @@ struct LineEvent {
     reply_token: Option<String>,
     #[serde(default)]
     message: Option<LineMessage>,
+    #[serde(default)]
+    source: Option<LineSource>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,6 +66,45 @@ struct LineMessage {
     message_type: String,
     #[serde(default)]
     text: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LineSource {
+    #[serde(rename = "userId", default)]
+    user_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LineProfile {
+    #[serde(default)]
+    language: Option<String>,
+}
+
+/// LINEの`GET https://api.line.me/v2/bot/profile/{userId}`から、ユーザーが
+/// LINEアプリに設定している言語を取得する。`E_GOV_LINE_CHANNEL_ACCESS_TOKEN`
+/// 未設定時・API失敗時・languageフィールドが無い場合は`None`を返し、
+/// 呼び出し側でメッセージ本文からの簡易判定(`chat_commerce::detect_lang`)
+/// にフォールバックする。
+async fn line_user_language(user_id: &str) -> Option<crate::i18n::Lang> {
+    let access_token = std::env::var("E_GOV_LINE_CHANNEL_ACCESS_TOKEN").ok()?;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("https://api.line.me/v2/bot/profile/{user_id}"))
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .ok()?;
+
+    if !resp.status().is_success() {
+        tracing::info!("LINE profile lookup returned {}", resp.status());
+        return None;
+    }
+
+    let profile: LineProfile = resp.json().await.ok()?;
+    let code = profile.language?;
+    tracing::info!("LINE profile language for user: {code}");
+    Some(crate::i18n::Lang::parse(Some(&code)))
 }
 
 /// LINEの`POST https://api.line.me/v2/bot/message/reply`を呼ぶ。
@@ -154,9 +195,21 @@ pub async fn line_webhook(req: &Request, body: Body) -> Response {
                 }
                 let Some(text) = &message.text else { continue };
 
+                // 言語判定: まずLINEプロフィールAPI(アクセストークンが
+                // あれば実際のユーザー設定言語)、無ければメッセージ本文
+                // からの簡易判定にフォールバックする。
+                let user_id = event.source.as_ref().and_then(|s| s.user_id.as_deref());
+                let lang = match user_id {
+                    Some(uid) => match line_user_language(uid).await {
+                        Some(lang) => lang,
+                        None => crate::chat_commerce::detect_lang(text),
+                    },
+                    None => crate::chat_commerce::detect_lang(text),
+                };
+
                 // AIチャットコマース応答(`chat_commerce.rs`、ルールベース、
                 // 詳細はそのモジュールの正直な開示コメント参照)。
-                let reply = crate::chat_commerce::reply_for(text);
+                let reply = crate::chat_commerce::reply_for(lang, text);
                 reply_to_line(reply_token, &reply).await;
             }
         }
