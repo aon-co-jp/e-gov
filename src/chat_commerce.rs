@@ -50,17 +50,25 @@ const FALLBACK_REPLY: &str = "e-gov.infoへようこそ。\
 教えていただければ、該当するページをご案内します。\
 (本メッセージはルールベースの応答です。実際のLLM連携は未実装、詳しくは e-gov.info/research をご覧ください)";
 
+/// LINEでの全ての返信の先頭に必ず付ける、英語・日本語併記のサンプル
+/// 注意書き(ユーザー指示、2026-07-18: WEBサイトだけでなくLINE友だに
+/// なっても毎回表示すること)。
+pub const SAMPLE_BANNER: &str = "⚠️ THIS IS STILL A SAMPLE / DEMONSTRATION ONLY — NOT A LIVE SERVICE\n\
+⚠️ これはまだサンプル・デモンストレーションです(実際のサービスではありません)\n\n";
+
 /// ユーザーのメッセージ本文から、キーワードマッチングで案内文を選ぶ。
 /// 大文字・小文字を無視し、複数キーワードにマッチした場合は最初に定義
 /// された`INTENTS`の順序を優先する(単純化のためスコアリングはしない)。
-pub fn reply_for(user_text: &str) -> &'static str {
+/// 返信の先頭には必ず`SAMPLE_BANNER`(英日併記のサンプル注意書き)を
+/// 付ける——WEBサイトのバナーと同様、LINE経由でも毎回表示するため。
+pub fn reply_for(user_text: &str) -> String {
     let lower = user_text.to_lowercase();
     for intent in INTENTS {
         if intent.keywords.iter().any(|kw| lower.contains(&kw.to_lowercase())) {
-            return intent.reply;
+            return format!("{SAMPLE_BANNER}{}", intent.reply);
         }
     }
-    FALLBACK_REPLY
+    format!("{SAMPLE_BANNER}{FALLBACK_REPLY}")
 }
 
 #[cfg(test)]
@@ -89,6 +97,14 @@ mod tests {
 
     #[test]
     fn falls_back_for_unmatched_text() {
-        assert_eq!(reply_for("こんにちは"), FALLBACK_REPLY);
+        assert_eq!(reply_for("こんにちは"), format!("{SAMPLE_BANNER}{FALLBACK_REPLY}"));
+    }
+
+    #[test]
+    fn every_reply_starts_with_the_bilingual_sample_banner() {
+        for text in ["申請したい", "buy a car", "掛け仕入れ", "土地を探す", "何でもない文章"] {
+            let reply = reply_for(text);
+            assert!(reply.starts_with(SAMPLE_BANNER), "reply for {text:?} did not start with the sample banner: {reply}");
+        }
     }
 }

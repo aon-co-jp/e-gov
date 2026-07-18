@@ -157,7 +157,7 @@ pub async fn line_webhook(req: &Request, body: Body) -> Response {
                 // AIチャットコマース応答(`chat_commerce.rs`、ルールベース、
                 // 詳細はそのモジュールの正直な開示コメント参照)。
                 let reply = crate::chat_commerce::reply_for(text);
-                reply_to_line(reply_token, reply).await;
+                reply_to_line(reply_token, &reply).await;
             }
         }
         Err(err) => {

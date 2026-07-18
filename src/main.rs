@@ -128,10 +128,17 @@ nav a {{ margin-right: 1rem; }}
 ul.linklist li {{ margin-bottom: 0.5rem; }}
 footer {{ margin-top: 3rem; font-size: 0.85rem; color: #777; }}
 .badge {{ display: inline-block; background: #eee; border-radius: 4px; padding: 0.1rem 0.5rem; font-size: 0.8rem; margin-left: 0.5rem; }}
+.sample-banner {{ background: #b91c1c; color: #fff; text-align: center; font-weight: 700; padding: 0.9rem 1rem; margin: -2rem -1rem 1.5rem; font-size: 1.05rem; line-height: 1.5; }}
+.sample-banner .en {{ display: block; font-size: 1.15rem; }}
+.sample-banner .ja {{ display: block; margin-top: 0.2rem; }}
 {view_toggle_css}
 </style>
 </head>
 <body>
+<div class="sample-banner">
+<span class="en">⚠️ THIS IS STILL A SAMPLE / DEMONSTRATION ONLY — NOT A LIVE SERVICE</span>
+<span class="ja">⚠️ これはまだサンプル・デモンストレーションです(実際のサービスではありません)</span>
+</div>
 <nav><a href="/">TOP</a> <a href="/gov">eガバメント</a> <a href="/trade">オンライン貿易</a> <a href="/credit">与信・売掛保証</a> <a href="/realestate">不動産・AI工務店</a> <a href="/research">自動調査・マーケティング</a></nav>
 {body}
 <footer><p>e-gov.info — デジタルガバメント × オンライン貿易プラットフォーム(構想段階)。 <a href="{GITHUB_REPO_URL}">GitHub (aon-co-jp/e-gov)</a></p></footer>
