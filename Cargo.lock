@@ -146,6 +146,7 @@ dependencies = [
  "anyhow",
  "base64",
  "hmac",
+ "once_cell",
  "poem",
  "pulldown-cmark",
  "reqwest",

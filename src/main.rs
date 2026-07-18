@@ -20,6 +20,7 @@
 //! クエリパラメータでこの13言語を切り替え可能(`src/i18n.rs`)、
 //! **既定言語は英語**。アラビア語・ペルシャ語は`dir="rtl"`も自動設定。
 
+mod board;
 mod chat_commerce;
 mod github_viewer;
 mod i18n;
@@ -29,7 +30,7 @@ mod research;
 
 use i18n::Lang;
 use poem::listener::TcpListener;
-use poem::web::{Html, Query};
+use poem::web::{Form, Html, Query};
 use poem::{get, handler, post, Route, Server};
 use serde::Deserialize;
 
@@ -117,6 +118,17 @@ fn spawn_periodic_tasks() {
             marketing_pass_and_save();
         }
     });
+
+    // 掲示板(WEB商談・TV CHAT)の期限切れ投稿パージ。アクセスの都度パージ
+    // する遅延方式(board.rs参照)に加え、アクセスが無い間もメモリを
+    // 解放しておくための保険として1時間毎に実行する。
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            ticker.tick().await;
+            board::purge_now();
+        }
+    });
 }
 
 /// 現在のページを保ったまま言語だけ切り替えるナビ(`?lang=xx`)。
@@ -163,6 +175,15 @@ footer {{ margin-top: 3rem; font-size: 0.85rem; color: #777; }}
 .sample-banner .local {{ display: block; margin-top: 0.2rem; }}
 .lang-switcher {{ font-size: 0.78rem; color: #777; margin-bottom: 0.75rem; line-height: 1.8; }}
 .lang-switcher a {{ color: #777; }}
+.retention-notice {{ background: #eef6ff; border: 1px solid #bcd9ff; border-radius: 6px; padding: 0.75rem 1rem; margin: 1rem 0; font-size: 0.92rem; }}
+.retention-notice .en {{ display: block; font-weight: 700; }}
+.retention-notice .local {{ display: block; margin-top: 0.3rem; color: #333; }}
+.board-form {{ background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 6px; padding: 1rem; margin: 1rem 0 2rem; }}
+.board-form label {{ display: block; font-size: 0.85rem; margin-top: 0.6rem; margin-bottom: 0.2rem; }}
+.board-form input, .board-form textarea {{ width: 100%; box-sizing: border-box; padding: 0.4rem; font-size: 0.95rem; border: 1px solid #ccc; border-radius: 4px; }}
+.board-form button {{ margin-top: 0.8rem; padding: 0.5rem 1.2rem; font-size: 0.95rem; cursor: pointer; }}
+ul.board-posts {{ list-style: none; padding: 0; }}
+ul.board-posts li {{ border-bottom: 1px solid #eee; padding: 0.5rem 0; }}
 {view_toggle_css}
 </style>
 </head>
@@ -172,7 +193,7 @@ footer {{ margin-top: 3rem; font-size: 0.85rem; color: #777; }}
 {banner_local_html}
 </div>
 <div class="lang-switcher">{lang_switcher}</div>
-<nav><a href="/">{nav_top}</a> <a href="/gov">{nav_gov}</a> <a href="/trade">{nav_trade}</a> <a href="/credit">{nav_credit}</a> <a href="/realestate">{nav_realestate}</a> <a href="/research">{nav_research}</a></nav>
+<nav><a href="/">{nav_top}</a> <a href="/gov">{nav_gov}</a> <a href="/trade">{nav_trade}</a> <a href="/credit">{nav_credit}</a> <a href="/realestate">{nav_realestate}</a> <a href="/board">{nav_board}</a> <a href="/research">{nav_research}</a></nav>
 {body}
 <footer><p>{footer} <a href="{GITHUB_REPO_URL}">GitHub (aon-co-jp/e-gov)</a></p></footer>
 <script>{view_toggle_js}</script>
@@ -184,6 +205,7 @@ footer {{ margin-top: 3rem; font-size: 0.85rem; color: #777; }}
         nav_trade = c.nav_trade,
         nav_credit = c.nav_credit,
         nav_realestate = c.nav_realestate,
+        nav_board = c.nav_board,
         nav_research = c.nav_research,
         footer = c.footer,
         view_toggle_css = github_viewer::VIEW_TOGGLE_CSS,
@@ -258,6 +280,76 @@ fn research_page(Query(q): Query<LangQuery>) -> Html<String> {
     simple_page(lang, "/research", i18n::research_text(lang))
 }
 
+/// 掲示板1カテゴリ分(見出し+フォーム+投稿一覧)をレンダリングする。
+fn render_board_section(lang: Lang, category: board::Category, heading: &str, s: &i18n::BoardStrings) -> String {
+    let posts = board::list_posts(category);
+    let posts_html = if posts.is_empty() {
+        format!("<p>{}</p>", s.no_posts)
+    } else {
+        let items: String = posts.iter().map(board::render_post).collect();
+        format!(r#"<ul class="board-posts">{items}</ul>"#)
+    };
+    let category_value = match category {
+        board::Category::Negotiation => "negotiation",
+        board::Category::TvChat => "tvchat",
+    };
+    format!(
+        r#"<h2>{heading}</h2>
+{posts_html}
+<form class="board-form" method="post" action="/board/post">
+<input type="hidden" name="category" value="{category_value}">
+<input type="hidden" name="lang" value="{lang_code}">
+<label>{name_label}</label>
+<input type="text" name="name" maxlength="60" required>
+<label>{message_label}</label>
+<textarea name="message" rows="3" maxlength="800" required></textarea>
+<label>{link_label}</label>
+<input type="url" name="meet_link" maxlength="300">
+<button type="submit">{submit_label}</button>
+</form>"#,
+        lang_code = lang.code(),
+        name_label = s.name_label,
+        message_label = s.message_label,
+        link_label = s.link_label,
+        submit_label = s.submit_label,
+    )
+}
+
+#[handler]
+fn board_page(Query(q): Query<LangQuery>) -> Html<String> {
+    let lang = Lang::parse(q.lang.as_deref());
+    let t = i18n::board_text(lang);
+    let s = i18n::board_strings(lang);
+    let retention_hours = board::retention_hours();
+
+    let body = format!(
+        r#"<h1>{h1}</h1>
+<p>{intro}</p>
+<div class="retention-notice">
+<span class="en">⚠️ Posts older than {retention_hours} hours are automatically deleted.</span>
+<span class="local">⚠️ 投稿は{retention_hours}時間を過ぎると自動的に削除されます。</span>
+</div>
+{negotiation_section}
+{tvchat_section}
+"#,
+        h1 = t.h1,
+        intro = t.body,
+        negotiation_section = render_board_section(lang, board::Category::Negotiation, s.negotiation_heading, &s),
+        tvchat_section = render_board_section(lang, board::Category::TvChat, s.tvchat_heading, &s),
+    );
+    Html(page_shell(lang, "/board", t.title, &body))
+}
+
+#[handler]
+fn board_post(Form(form): Form<board::NewPostForm>) -> poem::Response {
+    let _ = board::add_post(&form);
+    let lang = Lang::parse(if form.lang.is_empty() { None } else { Some(form.lang.as_str()) });
+    poem::Response::builder()
+        .status(poem::http::StatusCode::SEE_OTHER)
+        .header("Location", format!("/board?lang={}", lang.code()))
+        .body(())
+}
+
 #[handler]
 fn healthz() -> &'static str {
     "ok"
@@ -284,6 +376,8 @@ async fn main() -> Result<(), std::io::Error> {
         .at("/credit", get(credit))
         .at("/realestate", get(realestate))
         .at("/research", get(research_page))
+        .at("/board", get(board_page))
+        .at("/board/post", post(board_post))
         .at("/webhook/line", post(line_webhook::line_webhook))
         .at("/healthz", get(healthz));
 
