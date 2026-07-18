@@ -225,6 +225,18 @@ AIが判断してよい)に基づき、本プロジェクトでは**実際の`po
 
 ## HANDOFF
 
+- **2026-07-18 多言語対応の基本言語セット(13言語)README作成完了**:
+  `README.md`(日本語)を最新機能(GitHub自動クロール・LINE連携・
+  サンプルバナー)に合わせて更新し、`README-English.md`・
+  `README-England.md`(英国英語)・`README-Chinese.md`・
+  `README-Taiwan.md`・`README-Korea.md`・`README-Italy.md`・
+  `README-France.md`・`README-Germany.md`・`README-Arabic.md`・
+  `README-Iran.md`(ペルシャ語)・`README-Russia.md`・
+  `README-Ukraine.md`を新規作成(命名は`aruaru-db`の既存慣行
+  `README-<言語>.md`に準拠)。サイト本体(`src/main.rs`)の多言語切り替え
+  機能自体は引き続き未実装(v0.1.0では日本語のみ)——今回はドキュメント
+  レベルの多言語対応。
+
 - **2026-07-18 新規作成**: ユーザー構想(eガバメント×コンビニ端末×LINE×段階的
   本人確認、オンライン貿易×不動産×AI工務店×AIチャットコマース、初期は
   アドセンスでのサンプル運用)をもとに、エストニアX-Road・アゼルバイジャン
