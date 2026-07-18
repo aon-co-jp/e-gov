@@ -256,10 +256,23 @@ fn gov(Query(q): Query<LangQuery>) -> Html<String> {
     simple_page(lang, "/gov", i18n::gov_text(lang))
 }
 
+/// サンプル・デモンストレーション段階の注意書き(掲示板書き込み・
+/// デモ出店出品はいずれ自動削除される旨、13言語)を`<div>`として描画する。
+fn render_demo_notice(lang: Lang) -> String {
+    format!(r#"<div class="retention-notice"><span class="en">{}</span></div>"#, i18n::demo_content_notice(lang))
+}
+
 #[handler]
 fn trade(Query(q): Query<LangQuery>) -> Html<String> {
     let lang = Lang::parse(q.lang.as_deref());
-    simple_page(lang, "/trade", i18n::trade_text(lang))
+    let t = i18n::trade_text(lang);
+    let body = format!(
+        "<h1>{}</h1>\n{}\n<p>{}</p>\n",
+        t.h1,
+        render_demo_notice(lang),
+        t.body,
+    );
+    Html(page_shell(lang, "/trade", t.title, &body))
 }
 
 #[handler]
@@ -325,15 +338,17 @@ fn board_page(Query(q): Query<LangQuery>) -> Html<String> {
     let body = format!(
         r#"<h1>{h1}</h1>
 <p>{intro}</p>
+{demo_notice}
 <div class="retention-notice">
-<span class="en">⚠️ Posts older than {retention_hours} hours are automatically deleted.</span>
-<span class="local">⚠️ 投稿は{retention_hours}時間を過ぎると自動的に削除されます。</span>
+<span class="en">⚠️ Posts on this page specifically expire after {retention_hours} hours.</span>
+<span class="local">⚠️ このページの投稿は特に{retention_hours}時間で期限切れになります。</span>
 </div>
 {negotiation_section}
 {tvchat_section}
 "#,
         h1 = t.h1,
         intro = t.body,
+        demo_notice = render_demo_notice(lang),
         negotiation_section = render_board_section(lang, board::Category::Negotiation, s.negotiation_heading, &s),
         tvchat_section = render_board_section(lang, board::Category::TvChat, s.tvchat_heading, &s),
     );

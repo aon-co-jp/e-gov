@@ -812,3 +812,25 @@ pub fn board_strings(lang: Lang) -> BoardStrings {
         },
     }
 }
+
+/// サンプル・デモンストレーション段階であることに伴う一般的な注意書き。
+/// e-gov.infoに限らず、掲示板への書き込みやデモの出店・出品情報は
+/// 時間が経つと自動的に削除される旨を、13言語で案内する
+/// (ユーザー指示、2026-07-19)。`/board`・`/trade`ページ等、利用者が
+/// 何かを投稿・出品する体裁のページに表示する。
+pub fn demo_content_notice(lang: Lang) -> &'static str {
+    match lang {
+        Lang::En | Lang::EnGb => "⚠️ This is a sample/demonstration site (not limited to e-gov.info). Board posts and demo marketplace listings are automatically deleted after a period of time. Thank you for your understanding.",
+        Lang::Ja => "⚠️ 本サイトはサンプル・デモンストレーションです(e-gov.infoに限りません)。掲示板への書き込みや、デモの出店・出品情報も、時間が経つと自動的に削除されます。あらかじめご了承ください。",
+        Lang::ZhCn => "⚠️ 本网站为样品/演示网站(不限于e-gov.info)。留言板留言以及演示性质的开店/上架商品信息，均会在一段时间后自动删除，敬请谅解。",
+        Lang::ZhTw => "⚠️ 本網站為樣品/展示網站(不限於e-gov.info)。留言板留言以及展示性質的開店/上架商品資訊，均會在一段時間後自動刪除，敬請見諒。",
+        Lang::Ko => "⚠️ 본 사이트는 샘플·데모입니다(e-gov.info에 국한되지 않습니다). 게시판 게시물 및 데모 입점·상품 등록 정보도 일정 시간이 지나면 자동으로 삭제됩니다. 양해 부탁드립니다.",
+        Lang::It => "⚠️ Questo è un sito campione/dimostrativo (non solo e-gov.info). I messaggi in bacheca e le inserzioni dimostrative del marketplace vengono eliminati automaticamente dopo un certo periodo. Grazie per la comprensione.",
+        Lang::Fr => "⚠️ Ceci est un site d'exemple/démonstration (pas seulement e-gov.info). Les messages du forum et les annonces de démonstration de la place de marché sont automatiquement supprimés après un certain temps. Merci de votre compréhension.",
+        Lang::De => "⚠️ Dies ist eine Beispiel-/Demo-Website (nicht nur e-gov.info). Forenbeiträge und Demo-Marktplatzangebote werden nach einer gewissen Zeit automatisch gelöscht. Vielen Dank für Ihr Verständnis.",
+        Lang::Ar => "⚠️ هذا موقع عيّنة/تجريبي (وليس مقتصراً على e-gov.info). سيتم حذف منشورات اللوحة وقوائم السوق التجريبية تلقائياً بعد فترة من الزمن. شكراً لتفهمكم.",
+        Lang::Fa => "⚠️ این یک سایت نمونه/آزمایشی است (نه فقط e-gov.info). پست‌های تابلوی اعلانات و فهرست‌های نمایشی بازار پس از مدتی به‌طور خودکار حذف می‌شوند. از درک شما سپاسگزاریم.",
+        Lang::Ru => "⚠️ Это демонстрационный/пробный сайт (не только e-gov.info). Сообщения на доске и демонстрационные объявления на маркетплейсе автоматически удаляются через некоторое время. Благодарим за понимание.",
+        Lang::Uk => "⚠️ Це демонстраційний/пробний сайт (не лише e-gov.info). Повідомлення на дошці та демонстраційні оголошення на маркетплейсі автоматично видаляються через деякий час. Дякуємо за розуміння.",
+    }
+}
