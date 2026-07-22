@@ -178,6 +178,10 @@ footer {{ margin-top: 3rem; font-size: 0.85rem; color: #777; }}
 .retention-notice {{ background: #eef6ff; border: 1px solid #bcd9ff; border-radius: 6px; padding: 0.75rem 1rem; margin: 1rem 0; font-size: 0.92rem; }}
 .retention-notice .en {{ display: block; font-weight: 700; }}
 .retention-notice .local {{ display: block; margin-top: 0.3rem; color: #333; }}
+.future-vision-notice {{ background: #f3f0ff; border: 1px solid #c9bdf5; border-radius: 6px; padding: 0.9rem 1.1rem; margin: 1.25rem 0; font-size: 0.92rem; }}
+.future-vision-notice h2 {{ margin: 0 0 0.5rem; font-size: 1rem; }}
+.future-vision-notice p.en {{ margin: 0 0 0.5rem; }}
+.future-vision-notice p.ja {{ margin: 0; color: #333; }}
 .board-form {{ background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 6px; padding: 1rem; margin: 1rem 0 2rem; }}
 .board-form label {{ display: block; font-size: 0.85rem; margin-top: 0.6rem; margin-bottom: 0.2rem; }}
 .board-form input, .board-form textarea {{ width: 100%; box-sizing: border-box; padding: 0.4rem; font-size: 0.95rem; border: 1px solid #ccc; border-radius: 4px; }}
@@ -250,10 +254,30 @@ fn simple_page(lang: Lang, path: &str, t: i18n::PageText) -> Html<String> {
     Html(page_shell(lang, path, t.title, &body))
 }
 
+/// 将来構想(現金廃止・オンライン取引限定・エストニア型の申告不要化・
+/// 停電時オフライン同期への暗号通貨/マイニング技術応用)を英語+日本語で
+/// 常時併記する(既存の`render_demo_notice`と同じ「言語切替に関わらず
+/// 常時バイリンガル表示」という設計方針を踏襲)。あくまで将来構想であり、
+/// 現時点の実装・法制度上の裏付けを伴うものではない。
+fn render_future_vision_notice() -> String {
+    r#"<div class="future-vision-notice">
+<h2><span class="en">Future Vision</span> / <span class="ja">将来構想</span></h2>
+<p class="en">In the future, we plan to phase out cash entirely in favor of online-only transactions. Following the model of Estonia's e-government (e-Estonia), we aim for a system where individual tax filing is not required. During power outages, offline activity is planned to be reconciled later once connectivity is restored, using technology derived from cryptocurrency mining/consensus mechanisms. This is a long-term vision, not a current feature — it depends on future legal and regulatory approval.</p>
+<p class="ja">将来的には現金を廃止し、オンライン取引のみとする予定です。エストニア電子政府(e-Estonia)の事例に倣い、個人での税務申告が不要となる仕組みを目指します。停電時などオフラインになった際は、暗号通貨のマイニング・合意形成技術を応用し、通信が復旧した後で後日同期を取る方式を採用予定です。これは長期的な構想であり現時点の実装機能ではなく、実現には今後の法制度上の許可が前提となります。</p>
+</div>"#.to_string()
+}
+
 #[handler]
 fn gov(Query(q): Query<LangQuery>) -> Html<String> {
     let lang = Lang::parse(q.lang.as_deref());
-    simple_page(lang, "/gov", i18n::gov_text(lang))
+    let t = i18n::gov_text(lang);
+    let body = format!(
+        "<h1>{}</h1>\n<p>{}</p>\n{}\n",
+        t.h1,
+        t.body,
+        render_future_vision_notice(),
+    );
+    Html(page_shell(lang, "/gov", t.title, &body))
 }
 
 /// サンプル・デモンストレーション段階の注意書き(掲示板書き込み・
