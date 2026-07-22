@@ -194,7 +194,7 @@ research)は13言語共通で簡潔な要約文に統一しており、日本語
 ## 関連プロジェクト
 
 - [open-raid-z](https://github.com/aon-co-jp/open-raid-z) — 開発ルールの正本。「契約不要の独自AI」方針(open-cuda×aruaru-llm SET)もここに記載
-- [aruaru-llm](https://github.com/aon-co-jp/aruaru-llm) — AIチャットコマース応答サービス。`src/chat_commerce.rs`のロジックをここへ集約する想定(open-cudaとSET構成)
+- [aruaru-llm](https://github.com/aon-co-jp/aruaru-llm) — AIチャットコマース応答サービス。2026-07-22に`src/chat_commerce.rs`からのHTTP問い合わせ(`reply_for_async`)を実装済み(`E_GOV_ARUARU_LLM_URL`、未起動時はローカルへフォールバック、詳細は下記HANDOFF参照。open-cudaとSET構成)
 - [open-cuda](https://github.com/aon-co-jp/open-cuda) — aruaru-llmが使うGPUランタイム(SETの相方)
 - [aruaru-db](https://github.com/aon-co-jp/aruaru-db) — 将来のDB接続候補
 - [aruaru-tokyo](https://github.com/aon-co-jp/aruaru-tokyo-server) / [karu.tokyo](https://github.com/aon-co-jp/karu.tokyo) — 同じ技術スタックの姉妹サイト(構成の参考元)
@@ -275,6 +275,77 @@ research)は13言語共通で簡潔な要約文に統一しており、日本語
 
 
 ## HANDOFF
+
+- **2026-07-22 `chat_commerce.rs`を`aruaru-llm`へのHTTP問い合わせに置き換え**:
+  `aruaru-llm`側CLAUDE.mdの2026-07-20 HANDOFFで「未着手」として記録されて
+  いた「`e-gov.info`側を実際に`aruaru-llm`へのHTTP問い合わせに置き換える
+  かどうかの判断・実装」を実施(このエコシステムの方針「文書化された
+  未決事項は次の実装対象であり、許可を求めるものではない」に基づき判断)。
+  1. `src/chat_commerce.rs`に`try_llm_reply()`(内部)・
+     `reply_for_async()`(公開)を追加。`reqwest`(既に依存済み、
+     追加変更不要)で`aruaru-llm`の`POST /v1/chat`
+     (`{"message": "...", "tenant": "e-gov.info"}`)へ問い合わせる。
+  2. **接続先**: 環境変数`E_GOV_ARUARU_LLM_URL`(既定値
+     `http://127.0.0.1:4600`、`aruaru-llm/src/main.rs`の`bind_addr`と
+     同じ値)。**`aruaru-llm`のURLをこの環境変数で指しているだけで、
+     `aruaru-llm`プロセス自体が実際に起動していないと機能しない**
+     (未起動時は下記フォールバックへ自動的に落ちる、サイト自体は
+     壊れない)。
+  3. **グレースフルデグラデーション**: HTTP失敗(疎通不可・タイムアウト
+     3秒・非2xx・レスポンス形式不正)のいずれの場合も`tracing::warn!`で
+     ログを残した上で、既存のローカルのルールベース応答
+     (`reply_for()`、旧来のキーワードマッチングロジック、変更なしで
+     温存)へ静かにフォールバックする(サイレント失敗はしない、
+     リクエスト自体はエラーにしない)。
+  4. `src/line_webhook.rs`の呼び出し元を`reply_for()`から
+     `reply_for_async().await`へ変更(1箇所のみ)。
+  5. **正直な開示**: `aruaru-llm`側の定型応答文は現状すべて日本語
+     (`aruaru-llm/src/scoring.rs`参照、多言語化は未対応)。バナー部分
+     (`⚠️ サンプルバナー`)は引き続き`lang`に応じて翻訳されるが、
+     `aruaru-llm`到達時は本文が言語に関わらず日本語のまま返る
+     (`e-gov.info`のローカル応答は13言語対応済みだったため、これは
+     `aruaru-llm`側が多言語対応するまでの一時的な後退——`aruaru-llm`側
+     CLAUDE.mdの次回課題として記録すべき)。
+  6. **検証**: `cargo build`/`cargo test --release`(`e-gov.info`
+     28件全green、コード変更なしの既存テストと同数——`reply_for_async`
+     はネットワークI/Oを伴うため単体テストは追加せず、代わりに実HTTPで
+     の統合検証を実施、下記参照)、`aruaru-llm`側`cargo test --release`
+     9件全green(既存のまま、`aruaru-llm`側は変更していない)。
+     **実際にプロセスを起動しての統合検証(型チェック・ステータス
+     コードのみに頼らない)**: `aruaru-llm`(`E_GOV_ARUARU_LLM_URL`の
+     既定値どおり`127.0.0.1:4600`)と`e-gov.info`
+     (`E_GOV_LINE_CHANNEL_SECRET=test-secret`、
+     `E_GOV_ARUARU_LLM_URL=http://127.0.0.1:4600`)を実際に両方起動し、
+     HMAC署名付きの実LINE Webhookペイロード(`POST /webhook/line`)を
+     `curl`で送信して検証:
+     - **到達成功ケース**: 「マイナンバーカードの申請をしたい」を送信
+       →`e-gov-server`ログに`aruaru-llm replied (engine=Some(
+       "embedding-cosine-v0-opencuda-bert-cpu"))`、実際の返信本文に
+       `aruaru-llm`側`scoring.rs`のgov intent固定文言(「eガバメント
+       (デジタルガバメント)についてのご案内ですね。ペーパーレスでの
+       オンライン申請…」、`e-gov.info`ローカルの`i18n::gov_text`とは
+       文面が異なる)が一致することを確認、`aruaru-llm`側ログにも
+       `chat request from unregistered tenant: e-gov.info`が記録されて
+       いることを確認(双方のログで裏取り)。
+       ※初回リクエストは`opencuda-bert`モデルのロード(数秒)により
+       3秒タイムアウトを超えフォールバックした実測があったため、
+       ウォームアップ後に再送して到達成功を確認した(本番でも初回
+       リクエストがフォールバックする可能性がある点は正直に記録)。
+     - **フォールバックケース**: `aruaru-llm`プロセスを停止した状態で
+       「買いたい商品があります」を送信→`e-gov-server`ログに
+       `WARN … aruaru-llm unreachable at http://127.0.0.1:4600/v1/chat:
+       … falling back to local rule-based reply`、かつリクエスト自体は
+       `200 ok`で正常応答し、実際の返信本文が`e-gov.info`ローカルの
+       `i18n::trade_text`(「オンライン貿易プラットフォーム(AI
+       チャットコマース)…食料品から自動車・オーディオ機器まで…」)
+       であることを確認(`aruaru-llm`側の文面とは異なる、フォールバック
+       が実際にローカルロジックへ切り替わったことの裏取り)。
+  - 次にすべきこと: (1) `aruaru-llm`側の応答文を多言語対応させ、
+    HTTP到達時も`lang`に応じた翻訳本文を返せるようにする、(2) 初回
+    リクエストのコールドスタート対策(`aruaru-llm`起動直後に
+    ウォームアップリクエストを送るか、タイムアウトを緩めるか検討)、
+    (3) `/board`等Web版チャットにも同じ`reply_for_async`を使うかどうか
+    検討(現状はLINE Webhookのみ配線)。
 
 - **2026-07-20 実装の健全性検証・`.env.example`の環境変数網羅・個人情報チェック**:
   他リポジトリとの連携実用性向上の一環として、まず本リポジトリの実態を

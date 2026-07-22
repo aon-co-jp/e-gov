@@ -19,6 +19,70 @@
 
 use crate::i18n::{self, Lang};
 
+/// `aruaru-llm`(エコシステム共通のAIチャットコマース応答サービス、
+/// [aon-co-jp/aruaru-llm](https://github.com/aon-co-jp/aruaru-llm))の
+/// 既定リッスンアドレス(`aruaru-llm/src/main.rs`の`bind_addr`と同じ値)。
+/// 環境変数`E_GOV_ARUARU_LLM_URL`未設定時はこのローカルアドレスを使う。
+/// **注意**: これはURLのデフォルト値であり、`aruaru-llm`プロセス自体は
+/// 別途起動しておく必要がある(未起動・疎通不可の場合は下記の通り
+/// ローカルのルールベース応答へ自動フォールバックする)。
+const DEFAULT_ARUARU_LLM_URL: &str = "http://127.0.0.1:4600";
+
+#[derive(Debug, serde::Deserialize)]
+struct AruaruLlmChatResponse {
+    reply: String,
+    #[serde(default)]
+    engine: Option<String>,
+}
+
+/// `aruaru-llm`の`POST /v1/chat`へ実際にHTTP問い合わせを行う。
+/// 疎通不可・タイムアウト・非2xx・パース失敗など、いずれの失敗経路でも
+/// `None`を返す(呼び出し側`reply_for_async`がローカルのルールベース応答
+/// へフォールバックする、「グレースフルデグラデーション、サイレント
+/// 失敗はしない」というこのエコシステムの方針に従い、必ず`tracing::warn!`
+/// でログを残す)。
+async fn try_llm_reply(user_text: &str) -> Option<String> {
+    let base = std::env::var("E_GOV_ARUARU_LLM_URL").unwrap_or_else(|_| DEFAULT_ARUARU_LLM_URL.to_string());
+    let url = format!("{base}/v1/chat");
+
+    let client = match reqwest::Client::builder().timeout(std::time::Duration::from_secs(3)).build() {
+        Ok(c) => c,
+        Err(err) => {
+            tracing::warn!("failed to build reqwest client for aruaru-llm: {err}, falling back to local rule-based reply");
+            return None;
+        }
+    };
+
+    let resp = match client
+        .post(&url)
+        .json(&serde_json::json!({ "message": user_text, "tenant": "e-gov.info" }))
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(err) => {
+            tracing::warn!("aruaru-llm unreachable at {url}: {err}, falling back to local rule-based reply");
+            return None;
+        }
+    };
+
+    if !resp.status().is_success() {
+        tracing::warn!("aruaru-llm returned non-2xx status {} from {url}, falling back to local rule-based reply", resp.status());
+        return None;
+    }
+
+    match resp.json::<AruaruLlmChatResponse>().await {
+        Ok(parsed) => {
+            tracing::info!("aruaru-llm replied (engine={:?})", parsed.engine);
+            Some(parsed.reply)
+        }
+        Err(err) => {
+            tracing::warn!("failed to parse aruaru-llm response from {url}: {err}, falling back to local rule-based reply");
+            None
+        }
+    }
+}
+
 /// 各カテゴリの多言語キーワードと、`i18n`の該当ページ本文を返す関数。
 struct Intent {
     keywords: &'static [&'static str],
@@ -154,6 +218,31 @@ pub fn reply_for(lang: Lang, user_text: &str) -> String {
         }
     }
     format!("{banner}{}", fallback_reply(lang))
+}
+
+/// `reply_for`のHTTP版。まず`aruaru-llm`(エコシステム共通のAIチャット
+/// コマース応答サービス、意味的類似度分類ベース)へ問い合わせ、成功すれば
+/// その応答をバナー付きで返す。`aruaru-llm`が未起動・疎通不可・タイムアウト・
+/// 非2xx・レスポンス形式不正のいずれかの場合は、`try_llm_reply`が既に
+/// `tracing::warn!`でログを残した上で`None`を返してくるので、ここでは
+/// 静かに(エラーにせず)ローカルのルールベース`reply_for`へフォールバック
+/// する。呼び出し側(`line_webhook.rs`)はこの関数だけを呼べばよい。
+///
+/// **正直な開示**: `aruaru-llm`側の定型応答文は現状すべて日本語である
+/// (`aruaru-llm/src/scoring.rs`参照、多言語化は未対応)。そのため
+/// `lang`が日本語以外の場合でも、`aruaru-llm`到達時は本文が日本語のまま
+/// 返る点に注意(バナー部分のみは引き続き`lang`に応じて翻訳される)。
+pub async fn reply_for_async(lang: Lang, user_text: &str) -> String {
+    if let Some(llm_reply) = try_llm_reply(user_text).await {
+        let common = i18n::common(lang);
+        let banner = if common.banner_local == common.banner_en {
+            format!("{}\n\n", common.banner_en)
+        } else {
+            format!("{}\n{}\n\n", common.banner_en, common.banner_local)
+        };
+        return format!("{banner}{llm_reply}");
+    }
+    reply_for(lang, user_text)
 }
 
 #[cfg(test)]

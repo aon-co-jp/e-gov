@@ -207,9 +207,12 @@ pub async fn line_webhook(req: &Request, body: Body) -> Response {
                     None => crate::chat_commerce::detect_lang(text),
                 };
 
-                // AIチャットコマース応答(`chat_commerce.rs`、ルールベース、
-                // 詳細はそのモジュールの正直な開示コメント参照)。
-                let reply = crate::chat_commerce::reply_for(lang, text);
+                // AIチャットコマース応答: まず`aruaru-llm`(エコシステム
+                // 共通のHTTPチャット応答サービス)へ問い合わせ、未起動・
+                // 疎通不可等の場合はローカルのルールベース応答(旧来の
+                // `chat_commerce.rs`ロジック)へ自動フォールバックする
+                // (詳細は`chat_commerce::reply_for_async`のコメント参照)。
+                let reply = crate::chat_commerce::reply_for_async(lang, text).await;
                 reply_to_line(reply_token, &reply).await;
             }
         }
