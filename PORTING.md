@@ -192,3 +192,7 @@
 - aruaru-llm の REST 全廃に伴い、本リポジトリの呼び出し先を `POST /aruaru_llm.v1.Llm/<Method>`(JSON本文)へ変更した(旧 `/v1/...` は aruaru-llm 側で削除済み)。
 - 対象は aruaru-llm を呼ぶ箇所のみ。本リポジトリ自身のAPI・他サービス(aruaru-search 等)の呼び出しは別途。
 - 未検証: ビルド/実サーバー往復(aruaru-llm の `connect-migration` ブランチが VPS 未反映のため)。aruaru-llm の main マージ・VPS反映と同時に反映すること。
+
+## 2026-11-20 依存の脆弱性修正 / Dependency security fix
+**日本語**: quinn-udp 0.5.16(RUSTSEC-2026-0538) を更新し、`cargo test --locked` が全件成功しました(本番反映は別途)。
+**English**: Updated quinn-udp 0.5.16(RUSTSEC-2026-0538); `cargo test --locked` passes (production deploy is separate).
