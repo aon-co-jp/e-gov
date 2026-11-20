@@ -1,0 +1,653 @@
+# 開発方針＆開発環境ルール(e-gov.info)
+
+作業ドライブは`F:\open-runo`。この節は[`open-raid-z`](https://github.com/aon-co-jp/open-raid-z)の
+`CLAUDE.md`を正本とし、各プロジェクトへコピーして同期する方針に準じる。
+GitHubリポジトリ: [aon-co-jp/e-gov](https://github.com/aon-co-jp/e-gov)。
+本番想定デプロイ先: VPS `/root/repository/e-gov.info`(2026-08-28、VPS
+ディレクトリ構成整理によりリポジトリは`/root/repository/`配下へ移動。
+ドメイン名でもあるため`/root/url/e-gov.info`にもシンボリックリンクを
+併設。旧パス`/root/e-gov.info`もシンボリックリンクとして残しており、
+systemdサービス等既存の参照はそのまま機能する)。
+
+> ⚠️ **正直な開示**: 本ドキュメントはユーザーからの口頭構想と、Web検索による
+> エストニア(e-Estonia/X-Road)・アゼルバイジャン(ASAN xidmet)の事例調査を
+> もとに2026-07-18に新規作成した設計思想ドキュメントであり、**実装はまだ
+> ほぼ存在しない(最小構成のスケルコードのみ)**。マイナンバーカード連携・
+> 決済・電子契約等の実装には各種法令(電子署名法・宅建業法・特定商取引法・
+> 資金決済法・個人情報保護法等)の専門的確認が必須であり、本ドキュメントの
+> 記載だけで実装・公開してよい根拠にはならない。実装を進める際は都度、
+> 法令・実在APIの一次情報を確認すること。
+
+> 🚧 **本プロジェクトは「正式な許可が下りるまでのサンプル・デモンストレー
+> ションサイト」である**(ユーザー指示、2026-07-18)。**電子公証・電子契約
+> (電子交渉を経た法的拘束力のある売買・賃貸契約の締結)は、現段階では
+> 一切実装しない**。不動産の電子契約・AI工務店・与信/売掛保証等のページは
+> あくまで機能構想の説明・UIモックであり、実際の法的効力を持つ契約締結・
+> 公証行為には接続しない。正式な許可(該当法令の確認、必要な許認可・
+> 提携先の確保等)が下りた後に、別フェーズとして実装するかどうかを
+> 改めて判断する。この方針はコード上のコメント・ページ文言にも明記し、
+> 「デモであることを利用者に隠さない」ことを徹底する。
+
+## 参考資料(海外電子政府事例、2026-07-18調査)
+
+| 事例 | 参考にする点 | 出典 |
+|---|---|---|
+| エストニア e-Estonia / X-Road | **分散型データ連携基盤**(中央集権的な単一DBを持たず、各省庁・民間の
+  既存DBを相互接続するミドルウェア層)という設計思想。年間22億件のトランザクション・
+  3000以上のeサービス・約5.2万組織が接続。デジタルID(e-ID)が国民の99%に普及。
+  2026年時点でAIエージェント自体にもX-Road経由でスコープ付きID発行の検討が進む。 | https://en.wikipedia.org/wiki/E-Estonia , https://digitalgov.network/xroad-dxp/ |
+| アゼルバイジャン ASAN xidmet(「簡単なサービス」の意) | **ワンストップ窓口**(複数省庁+民間サービスを1つの物理窓口・1回の来訪で完結、
+  平均対応時間17分)、**モバイル巡回サービス**(バスで僻地に窓口を持っていく)、
+  `ASAN Pay`(決済)・`Asan Imza`(モバイル電子署名)という周辺サービス群。
+  満足度99.8%。**「デジタルが苦手な人・端末が使えない人にどう到達するか」**の
+  実例として、コンビニ端末(Loppi/Famiポート/セブン-イレブン)構想の参考になる。 | https://www.asan.gov.az/en , https://en.wikipedia.org/wiki/ASAN_service |
+
+## このプロジェクトの役割
+
+`e-gov.info`は、**行政(お役所・政府)のデジタル化**と、**個人〜貿易商社まで
+対応するオンライン貿易・不動産プラットフォーム**を、LINEアプリ・WEBサイト・
+コンビニ端末(Loppi/Famiポート/セブン-イレブン等のマルチメディア端末)という
+複数の入り口から同一のバックエンドへアクセスできる形で統合するプロジェクト。
+
+大きく2本柱:
+
+1. **eガバメント(デジタルガバメント)**: ペーパーレス・オンライン申請
+2. **オンライン貿易プラットフォーム(AIチャットコマース)**: 個人〜貿易商社
+   対応のC2C/B2C/B2B通信販売、不動産投資・電子契約、AI工務店
+
+### 1. eガバメント(デジタルガバメント)
+
+- **入り口の多様化**: LINEアプリ・WEBサイトに加えて、**WEBサイトやスマホの
+  操作が分からない層**のために、コンビニのマルチメディア端末(Loppi/
+  Famiポート/セブン-イレブンのマルチコピー機等)を申請窓口として使えるように
+  する(アゼルバイジャンASANの「窓口を利用者に近づける」発想の日本版)。
+- **ペーパーレス・オンライン申請**を基本方針とする。紙の申請書を電子化する
+  だけでなく、複数の省庁・自治体にまたがる手続きを1回の入力で済ませる
+  ワンストップ化を目指す(エストニアX-Roadの「省庁ごとに閉じたDBを、
+  1つの中央DBに統合するのではなく、相互接続する」という設計思想を参考にする
+  ——`aruaru-db`のZFS互換/ACID互換ハイブリッドDB・分散Git-on-SQL特性は、
+  この「省庁間・記録の改ざん検知つき相互接続」に応用できる可能性がある)。
+- **本人確認は取引・手続きの重要度に応じた段階方式(risk-based
+  authentication)**とする:
+  - **軽微な照会・低額手続き**: 電話でのナンバーディスプレイ(発信者番号
+    通知)による簡易確認。ナンバーディスプレイの無い電話からの申請は、
+    登録済みの番号へこちらから**折り返し電話**することで本人性を担保する。
+  - **中程度の金額・手続き**: 登録メールアドレスへの**ワンタイムパスワード
+    (OTP)**。
+  - **高額な取引・重要な法的手続き(電子契約・不動産取引等)**: **マイナンバー
+    カードのスマートフォンNFCスキャン**による公的個人認証(JPKI相当)。
+  - このように**「金額・重要度に比例して本人確認の強度を上げる」**のが
+    設計上の核心方針であり、全ての取引に同じ強度の認証を課さない
+    (アゼルバイジャンの`Asan Imza`同様、モバイル完結の電子署名も
+    将来的に検討)。
+
+### 2. オンライン貿易プラットフォーム(AIチャットコマース)
+
+- **不動産投資・電子契約**: 土地・不動産の売買・賃貸契約を電子契約で完結。
+  - **AI工務店**: ユーザーが検索した土地情報をもとに、AIが「この様な間取りは
+    いかがでしょうか」と提案する**AIチャットコマース**形式の対話型間取り提案。
+  - **税制方針(設計原則として明記)**: 海外の不動産投資優遇税制の事例では、
+    節税目的の投資マネーが不動産に過剰流入し、地価・不動産価格が高騰して
+    実需層(実際にそこに住む国民)の生活を圧迫する副作用が指摘されている。
+    本プラットフォームが将来的に投資商品としての不動産を扱う場合、
+    **節税効果を意図的に薄く・低く設計し、投機的資金の過剰流入を助長しない**
+    ことを設計原則とする(具体的な税制優遇の有無・税率は本プラットフォーム側で
+    決められるものではなく実際の税法に従うが、**手数料体系・レコメンド
+    ロジック側で投機助長を煽らない**という自主方針として記録する)。
+- **AIチャットコマース対応の総合通販**: 食料品・加工食品・非常食・日用雑貨・
+  衣料品・医療品・サプリメント・家具・家電製品・スポーツ用品・新車/中古車
+  (自動車・バイク)・オーディオ機器(アンプ・スピーカー)まで、幅広い商材を
+  LINEアプリ・WEBサイトの両方から**AIとの対話(チャットコマース)**で
+  発見・注文できるようにする。
+- **出店者層**: 個人(フリマ的な出品)〜貿易商社まで対応する**マーケット
+  プレイス型**(Amazon・Yahoo!ショッピング・ヤフオク!・メルカリ的な位置づけ)。
+  **差別化ポイントは手数料の大幅な引き下げ**(既存大手プラットフォームより
+  出店・出品コストを下げることで出店者を呼び込む)。
+- **初期フェーズ(先行リリース方針)**: 実際の在庫仕入れは行わず、
+  **アドセンス(広告収益)によるサンプル的な運用**からスタートする。
+  実商流を伴わないデモ/実証段階として、AIチャットコマースのUXそのものを
+  検証することを優先する。
+- **AI与信調査・掛け仕入れ・売掛保証(B2B機能、2026-07-18追記)**: 個人〜
+  貿易商社まで対応する以上、代金後払い(掛け仕入れ)によるBtoB取引の
+  ニーズが生じる。以下を機能として搭載する:
+  - **AI与信調査**: 出店者・仕入れ希望者の取引実績・信用情報等をAIが
+    分析し、与信スコア(パーセンテージ)を算出する。
+  - **掛け仕入れ(売掛)対応**: 算出された与信スコアに応じて、代金の
+    後払い(例: 3ヶ月後払い等の支払いサイト)による仕入れを許可する。
+    与信スコアが一定基準に満たない場合は前払い等より厳格な条件とし、
+    スコアに比例して与信枠・支払いサイトを調整する。
+  - **与信担保・保険加入**: 掛け仕入れによる貸し倒れリスクに備え、
+    与信担保(保証金等)の設定と、**保険加入(取引信用保険相当)**を
+    組み合わせることでリスクを補完する。保険の引き受け・査定自体は
+    本プラットフォームが直接行うものではなく、既存の取引信用保険会社
+    (損保各社等)との連携を前提とする(要調査、下記HANDOFF参照)。
+  - **電子請求書の重複調査(AIオンライン調査機能)**: 発行しようとする
+    電子請求書が、インボイス制度の登録番号や請求内容の面で他社の請求書と
+    重複・衝突していないかをAIがオンラインで調査し、二重請求・不正請求の
+    リスクを事前に検知する。
+  - **売掛保証機能**: 出店者が発行した売掛債権(未回収の請求)を保証する
+    仕組み(ファクタリング相当、あるいは取引信用保険を介した保証)を
+    搭載し、出店者が代金未回収リスクを過度に負わずに掛け取引できるように
+    する。
+  - これらはいずれも金融・保険・与信管理という**規制産業**にまたがる
+    機能であり、実装前に貸金業法・割賦販売法・保険業法・下請代金支払
+    遅延等防止法等の該当法令、および実在する与信審査API・取引信用保険
+    API(既存の与信情報機関・損保会社のAPI等)の調査が必須(下記
+    HANDOFF参照、現時点では設計方針の記録のみで実装なし)。
+
+## 技術スタック
+
+`open-raid-z`の2026-07-10方針転換に準じ、**Poem/Tauri/Cosmoパッケージには
+直接依存させない**ことを既定としつつ、[[openruno-ecosystem-tech-stack]]の
+2026-07-18更新(ユーザー指示: Poem使用の可否はプロジェクトごとの実効率で
+AIが判断してよい)に基づき、本プロジェクトでは**実際の`poem`クレートを直接
+利用する**方針を採る。理由: `aruaru-tokyo`/`karu.tokyo`と同種の
+「DB非依存・1バイナリ完結の複数ページサイト」から着手するフェーズであり、
+自前でtokio/hyperを組むより`poem`を使う方が単純に効率的なため
+(将来、決済・電子契約・本人確認等の重い機能を持つフェーズに入った際、
+`open-web-server`/`RPoem`/`open-raid-z`の「良い所どり」で自前実装へ
+移行するかどうかは、その時点でのプロジェクトの実効率を見て改めて判断する)。
+
+- **バックエンド**: Rust + `poem`(`aruaru-tokyo`/`karu.tokyo`と同じ構成:
+  tokio + poem、テンプレートエンジン不使用のサーバーサイド文字列組み立てHTML)。
+- **フロントエンド/LINEアプリ**: 初期フェーズはサーバーサイドHTMLのみ。
+  LINE連携はLINE Messaging API(公式アカウント + Webhook)を想定
+  (未実装、今後のフェーズで着手)。
+- **DB/ストレージ**: 将来的に`aruaru-db`(ZFS互換チェックサム層+ACID互換
+  Git-on-SQL)を、行政記録・取引記録の改ざん検知・監査性の要件に活用する
+  ことを検討する(現時点では未接続、DB非依存の静的コンテンツ段階)。
+- **参照先(「良い所どり」の対象)**:
+  - [`open-runo`](https://github.com/aon-co-jp/open-runo) / [`RPoem`](https://github.com/aon-co-jp/RPoem) — Poem/Tauri/Cosmo機能パリティの自前実装群
+  - [`open-raid-z`](https://github.com/aon-co-jp/open-raid-z) — ZFS互換・開発ルール正本
+  - [`aruaru-db`](https://github.com/aon-co-jp/aruaru-db) — ACID互換・分散Git-on-SQL
+  - [`open-web-server`](https://github.com/aon-co-jp/open-web-server) — 4層4重通信・DB書き込み四重化
+
+## ページ構成(v0.1.0、最小構成)
+
+- `/` — TOP(2本柱の紹介: eガバメント / オンライン貿易プラットフォーム)
+- `/gov` — eガバメント案内(申請の入り口一覧: LINE/WEB/コンビニ端末、
+  段階的本人確認方式の説明)
+- `/trade` — オンライン貿易プラットフォーム案内(AIチャットコマース、
+  出店手数料の考え方)
+- `/credit` — AI与信調査・掛け仕入れ・電子請求書重複調査・売掛保証の案内
+- `/realestate` — 不動産投資・電子契約・AI工務店の案内
+- `/healthz` — ヘルスチェック
+
+## 多言語対応(2026-07-18追記)
+
+エコシステム内の他リポジトリ(`aruaru-db`等)の「世界10ヶ国語README」慣行に
+準じつつ、ユーザー指定の言語構成に合わせて以下を**基本言語セット**とする
+(README-<言語>.md方式。後日、世界中の言語への対応拡大を検討する):
+
+日本語・英語(米)・英語(英, イギリス英語)・中国語(簡体字)・台湾語
+(繁体字)・韓国語・イタリア語・フランス語・ドイツ語・アラビア語・
+ペルシャ語(イラン)・ロシア語・ウクライナ語
+
+**2026-07-18更新**: サイト本体(`src/main.rs`・`src/i18n.rs`)も
+`?lang=<コード>`クエリパラメータでこの13言語を切り替え可能にした
+(**既定言語は英語**、ユーザー指示「実際のサイトは最初は、英語を基本と
+して」)。アラビア語・ペルシャ語は`dir="rtl"`も自動設定。Accept-Language
+ヘッダによる自動判定や`/en/`のようなパス切り替えは未実装(クエリ
+パラメータ方式のみ、今後の検討課題)。TOPページは各言語で本文の
+詳細度を概ね揃えているが、サブページ(gov/trade/credit/realestate/
+research)は13言語共通で簡潔な要約文に統一しており、日本語版の初期
+実装にあった箇条書きの詳細さは(README-<言語>.md群と異なり)サイト
+本体では展開していない(翻訳量を現実的な範囲に収めるための設計判断、
+`src/i18n.rs`冒頭コメント参照)。
+
+## 関連プロジェクト
+
+- [open-raid-z](https://github.com/aon-co-jp/open-raid-z) — 開発ルールの正本。「契約不要の独自AI」方針(open-cuda×aruaru-llm SET)もここに記載
+- [aruaru-llm](https://github.com/aon-co-jp/aruaru-llm) — AIチャットコマース応答サービス。2026-07-22に`src/chat_commerce.rs`からのHTTP問い合わせ(`reply_for_async`)を実装済み(`E_GOV_ARUARU_LLM_URL`、未起動時はローカルへフォールバック、詳細は下記HANDOFF参照。open-cudaとSET構成)
+- [open-cuda](https://github.com/aon-co-jp/open-cuda) — aruaru-llmが使うGPUランタイム(SETの相方)
+- [aruaru-db](https://github.com/aon-co-jp/aruaru-db) — 将来のDB接続候補
+- [aruaru-tokyo](https://github.com/aon-co-jp/aruaru-tokyo-server) / [karu.tokyo](https://github.com/aon-co-jp/karu.tokyo) — 同じ技術スタックの姉妹サイト(構成の参考元)
+- [open-easy-web](https://github.com/aon-co-jp/open-easy-web) — ドメイン/HTTPS自動化ツール(本番デプロイ時に活用予定)
+
+## LINEアプリ連携に必要な申請・審査(2026-07-18調査)
+
+- **基本(無料・無審査で開始可能)**: LINE公式アカウントの開設(個人・法人
+  問わず無料、メールアドレスまたはLINEアカウントで「LINEビジネスID」を
+  登録)→ LINE Official Account Managerで「Messaging API」を有効化する
+  だけで、**未認証アカウント**として送受信が可能になる。
+- **認証済アカウント化には審査が必要**: LINE側が「利用者の不利益に
+  ならないか」「法令に抵触しないか」「規約の禁止行為に該当しないか」等の
+  独自基準で審査する。**行政・金融(与信・売掛保証・不動産電子契約等)に
+  関わる本プロジェクトの用途は、この審査でより厳格に見られる可能性が
+  高い**——「正式な許可が下りるまでのサンプル・デモ」という現在の方針
+  (上記🚧注記)とも整合する形で、まず未認証アカウントでの実証から始め、
+  認証済アカウント化は正式な許可・体制が整った段階で申請するのが妥当。
+- **法人ユーザー向け追加API**(決済連携等)は別途「法人ユーザー向け開発
+  ガイドライン」に基づく申請が必要。
+- 2026年3月までに日本国内の全LINE公式アカウントは「Business Manager」との
+  連携が必須化されるとの情報あり(要最新確認、本調査時点の二次情報)。
+- 出典: [Messaging APIを始めよう](https://developers.line.biz/ja/docs/messaging-api/getting-started/)、
+  [LINE公式アカウント媒体資料(2026-06-08更新)](https://www.lycbiz.com/sites/default/files/media/jp/download/LINE_Official_Account_ProductGuide.pdf)、
+  [法人ユーザー向け開発ガイドライン](https://developers.line.biz/ja/docs/partner-docs/development-guidelines/)。
+- **方針決定(ユーザー指示、2026-07-18)**: 認証済アカウント化は当分先の
+  話とし、まずは**未認証アカウント(メッセージ送受信のみ)の段階のみ申請
+  する**。LINE公式アカウントの開設・Messaging API有効化・チャネル
+  シークレット/チャネルアクセストークンの取得は**LINE Developers
+  コンソール上でユーザー本人が行う必要がある操作**(アカウント作成・
+  外部サービスへの登録はAIが代行できない)。コード側は、認証情報が
+  揃った時点ですぐ接続できるよう、Webhook受け口のみ先行して用意しておく
+  (環境変数`E_GOV_LINE_CHANNEL_SECRET`/`E_GOV_LINE_CHANNEL_ACCESS_TOKEN`
+  未設定時はWebhookを無効化する設計、実装は次回HANDOFF参照)。
+
+## 運用ルール追記(2026-07-18、正本はopen-raid-zのCLAUDE.md参照) — 確認不要の自動継続・リミット解除後の自動再開
+
+- **コンテキストウインドウ・5時間利用制限・その他のセッション中断が
+  発生し、その後リミットが解除されて新しいセッションが開始された場合、
+  「続けてよろしいですか」等の確認を挟まず、毎回自動的に前回セッションの
+  続きの作業を再開すること**(ユーザー指示、2026-07-18)。具体的には:
+  1. セッション開始時、各リポジトリの`git status`/`git log`と、この
+     `CLAUDE.md`(および他プロジェクトのCLAUDE.md)のHANDOFF節・
+     「次にすべきこと」記載を確認し、未完了・未pushの作業が無いかを
+     まず裏取りする(タスク管理メタデータを鵜呑みにしない既存方針と
+     同じ姿勢で、実際のgit状態を確認する)。
+  2. 未完了作業が見つかった場合、ユーザーへの確認を求めず、そのまま
+     自動的に検証(build/test)→修正→コミット→pushまで完了させる。
+  3. 完了している場合は、各CLAUDE.mdの「次にすべきこと」「未着手・
+     未完成」に記載された次の項目へ確認なしに着手する(既存の
+     「未着手だからといって確認を求めて手を止めない」方針の延長)。
+  4. 「続けてよろしければそのまま自動開発を継続します」のような、
+     続行そのものを尋ねる確認は今後一切行わない(ユーザー指示、
+     2026-07-18)。作業内容の要約・進捗報告はしてよいが、それは
+     承認を求めるものではなく完了報告として書く。
+  5. こまめにコミット・pushしておくことで、次回セッションが「どこから
+     再開すべきか」を迷わず`git log`/CLAUDE.mdから機械的に判断できる
+     ようにしておく(区切りがついた時点で都度コミット・pushする既存
+     方針との組み合わせ)。
+
+
+## 運用ルール追記(2026-07-19、正本はopen-raid-zのCLAUDE.md参照) — 白画面バグ等を見逃さない検証徹底
+
+- **WEB/UIを持つ機能を実装した後は、ビルド成功・`cargo test`・curlでの
+  ステータスコード確認だけで「完了」と報告せず、実際に画面が正しく
+  表示される(白画面・レンダリング崩れ・コンソールエラーが無い)ところ
+  まで確認すること**(ユーザー指示、2026-07-19)。
+  1. ブラウザ操作が可能な環境では、実際にページを開いて表示内容
+     (見出し・本文・想定した要素の存在)とコンソールエラーの有無を
+     確認する。
+  2. ブラウザ操作ができない環境では、少なくとも`curl`等でHTMLボディの
+     中身を取得し、期待される文字列が実際に含まれているかを確認する
+     ——ステータスコード200だけを見て「動作確認済み」としない。
+  3. 白画面・エラー・期待した内容の欠落等の不具合が見つかった場合は、
+     確認を求めず自動的に原因調査・修正・再確認まで行う。
+  4. 本番ドメインが未取得・DNS未設定なだけの状態は上記の「白画面
+     バグ」とは別物であり、混同しない(`localhost`確認で代替可)。
+
+
+## HANDOFF
+
+- **2026-10-14 TOPにameblo記事リンク追加・お引越し手順を整備**: `src/main.rs`のナビ直下に
+  記事リンク(https://ameblo.jp/www-aon/entry-12981307682.html)を追加、GitHub push・VPS(`/root/e-gov.info`、
+  `e-gov-server.service`、nginx→127.0.0.1:4500)へ反映しブラウザで表示確認済み。移設手順は`PORTING.md`・READMEの
+  「お引越し」節。ローカルcloneは`F:\e-gov`。
+  (EN) Added the ameblo article link under the TOP nav, pushed and deployed to the VPS, verified in the browser.
+  Migration steps are in `PORTING.md` / README ("Migrating to another server"). Local clone: `F:\e-gov`.
+
+- **2026-07-22 `chat_commerce.rs`を`aruaru-llm`へのHTTP問い合わせに置き換え**:
+  `aruaru-llm`側CLAUDE.mdの2026-07-20 HANDOFFで「未着手」として記録されて
+  いた「`e-gov.info`側を実際に`aruaru-llm`へのHTTP問い合わせに置き換える
+  かどうかの判断・実装」を実施(このエコシステムの方針「文書化された
+  未決事項は次の実装対象であり、許可を求めるものではない」に基づき判断)。
+  1. `src/chat_commerce.rs`に`try_llm_reply()`(内部)・
+     `reply_for_async()`(公開)を追加。`reqwest`(既に依存済み、
+     追加変更不要)で`aruaru-llm`の`POST /v1/chat`
+     (`{"message": "...", "tenant": "e-gov.info"}`)へ問い合わせる。
+  2. **接続先**: 環境変数`E_GOV_ARUARU_LLM_URL`(既定値
+     `http://127.0.0.1:4600`、`aruaru-llm/src/main.rs`の`bind_addr`と
+     同じ値)。**`aruaru-llm`のURLをこの環境変数で指しているだけで、
+     `aruaru-llm`プロセス自体が実際に起動していないと機能しない**
+     (未起動時は下記フォールバックへ自動的に落ちる、サイト自体は
+     壊れない)。
+  3. **グレースフルデグラデーション**: HTTP失敗(疎通不可・タイムアウト
+     3秒・非2xx・レスポンス形式不正)のいずれの場合も`tracing::warn!`で
+     ログを残した上で、既存のローカルのルールベース応答
+     (`reply_for()`、旧来のキーワードマッチングロジック、変更なしで
+     温存)へ静かにフォールバックする(サイレント失敗はしない、
+     リクエスト自体はエラーにしない)。
+  4. `src/line_webhook.rs`の呼び出し元を`reply_for()`から
+     `reply_for_async().await`へ変更(1箇所のみ)。
+  5. **正直な開示**: `aruaru-llm`側の定型応答文は現状すべて日本語
+     (`aruaru-llm/src/scoring.rs`参照、多言語化は未対応)。バナー部分
+     (`⚠️ サンプルバナー`)は引き続き`lang`に応じて翻訳されるが、
+     `aruaru-llm`到達時は本文が言語に関わらず日本語のまま返る
+     (`e-gov.info`のローカル応答は13言語対応済みだったため、これは
+     `aruaru-llm`側が多言語対応するまでの一時的な後退——`aruaru-llm`側
+     CLAUDE.mdの次回課題として記録すべき)。
+  6. **検証**: `cargo build`/`cargo test --release`(`e-gov.info`
+     28件全green、コード変更なしの既存テストと同数——`reply_for_async`
+     はネットワークI/Oを伴うため単体テストは追加せず、代わりに実HTTPで
+     の統合検証を実施、下記参照)、`aruaru-llm`側`cargo test --release`
+     9件全green(既存のまま、`aruaru-llm`側は変更していない)。
+     **実際にプロセスを起動しての統合検証(型チェック・ステータス
+     コードのみに頼らない)**: `aruaru-llm`(`E_GOV_ARUARU_LLM_URL`の
+     既定値どおり`127.0.0.1:4600`)と`e-gov.info`
+     (`E_GOV_LINE_CHANNEL_SECRET=test-secret`、
+     `E_GOV_ARUARU_LLM_URL=http://127.0.0.1:4600`)を実際に両方起動し、
+     HMAC署名付きの実LINE Webhookペイロード(`POST /webhook/line`)を
+     `curl`で送信して検証:
+     - **到達成功ケース**: 「マイナンバーカードの申請をしたい」を送信
+       →`e-gov-server`ログに`aruaru-llm replied (engine=Some(
+       "embedding-cosine-v0-opencuda-bert-cpu"))`、実際の返信本文に
+       `aruaru-llm`側`scoring.rs`のgov intent固定文言(「eガバメント
+       (デジタルガバメント)についてのご案内ですね。ペーパーレスでの
+       オンライン申請…」、`e-gov.info`ローカルの`i18n::gov_text`とは
+       文面が異なる)が一致することを確認、`aruaru-llm`側ログにも
+       `chat request from unregistered tenant: e-gov.info`が記録されて
+       いることを確認(双方のログで裏取り)。
+       ※初回リクエストは`opencuda-bert`モデルのロード(数秒)により
+       3秒タイムアウトを超えフォールバックした実測があったため、
+       ウォームアップ後に再送して到達成功を確認した(本番でも初回
+       リクエストがフォールバックする可能性がある点は正直に記録)。
+     - **フォールバックケース**: `aruaru-llm`プロセスを停止した状態で
+       「買いたい商品があります」を送信→`e-gov-server`ログに
+       `WARN … aruaru-llm unreachable at http://127.0.0.1:4600/v1/chat:
+       … falling back to local rule-based reply`、かつリクエスト自体は
+       `200 ok`で正常応答し、実際の返信本文が`e-gov.info`ローカルの
+       `i18n::trade_text`(「オンライン貿易プラットフォーム(AI
+       チャットコマース)…食料品から自動車・オーディオ機器まで…」)
+       であることを確認(`aruaru-llm`側の文面とは異なる、フォールバック
+       が実際にローカルロジックへ切り替わったことの裏取り)。
+  - 次にすべきこと: (1) `aruaru-llm`側の応答文を多言語対応させ、
+    HTTP到達時も`lang`に応じた翻訳本文を返せるようにする、(2) 初回
+    リクエストのコールドスタート対策(`aruaru-llm`起動直後に
+    ウォームアップリクエストを送るか、タイムアウトを緩めるか検討)、
+    (3) `/board`等Web版チャットにも同じ`reply_for_async`を使うかどうか
+    検討(現状はLINE Webhookのみ配線)。
+
+- **2026-07-20 実装の健全性検証・`.env.example`の環境変数網羅・個人情報チェック**:
+  他リポジトリとの連携実用性向上の一環として、まず本リポジトリの実態を
+  裏取りした。**`cargo build --release`成功、`cargo test --release`で
+  既存28件全green**(コード変更なしでも回帰が無いことを確認)。実バイナリを
+  起動し`curl`で`/`(GitHub風README自動表示が実際にGitHubから取得できている
+  ことを確認、`markdown-body`が描画されエラー文言が出ないこと)・`/gov`
+  (en/ja両方でh1が正しく翻訳されること)・`/board`(投稿フォームに実際に
+  POSTし、303リダイレクト後の一覧に投稿内容が反映されるラウンドトリップ)を
+  実際に確認済み(ビルド成功・ステータスコードのみでの完了報告ではない)。
+  **個人情報の確認**: リポジトリ全体を実メールアドレス・電話番号等のパターンで
+  grepし、ハードコードされた個人情報は見つからなかった(open-easy-webで
+  過去に見つかった問題は本リポジトリには存在しない)。
+  **見つかった軽微な齟齬(修正済み)**: `.env.example`が`E_GOV_LINE_CHANNEL_*`
+  の2変数のみを記載しており、実際にコードが参照する`E_GOV_BOARD_RETENTION_HOURS`
+  /`E_GOV_RESEARCH_INTERVAL_HOURS`/`E_GOV_MARKETING_INTERVAL_HOURS`/
+  `E_GOV_DATA_DIR`が未記載だった(`main.rs`/`board.rs`参照)。運用時に
+  存在に気づきにくく実用性を下げるため、`.env.example`に全環境変数と
+  既定値・任意設定である旨を追記した。
+  **他リポジトリ連携の実態(コードレベルで確認)**: `CLAUDE.md`記載の
+  `open-raid-z`/`aruaru-db`/`aruaru-llm`/`open-cuda`/`open-web-server`等は
+  いずれも「設計方針・良い所取りの参照先」であり、本リポジトリのコードから
+  これらを直接クレート依存・API呼び出しする実装はまだ存在しない(ドキュメント
+  記載通りで齟齬なし、将来フェーズの課題)。実際にコードレベルで外部接続して
+  いるのは(1)GitHub(`raw.githubusercontent.com`、README自動表示、動作確認済み)、
+  (2)LINE Messaging API(`api.line.me`、認証情報未設定のため現状は未接続応答
+  のみ、これも設計通り)の2つのみ。
+  - 次にすべきこと: `/credit`・`/realestate`に実際の出品・申込フォームを
+    実装する段階になったら、`/trade`・`/board`と同じ13言語デモ自動削除
+    通知(`render_demo_notice`)を追加する(現状はまだ両ページとも紹介文
+    のみでフォームが無いため、通知を付けても対象が無く時期尚早と判断し
+    見送った)。
+
+- **2026-07-19 サンプル・デモンストレーション段階の自動削除注意書きを
+  13言語化、`/trade`にも掲示**: ユーザー指示「デジタルガバメント
+  e-gov.infoに限らず、サンプルデモの為、掲示板などに書き込まれましても、
+  サンプルデモ出店出品されましても、時間が経つと自動削除されます。
+  ご了承下さいと書いておいて。日本語と英語と中国語と台湾語、韓国語など
+  世界13ケ国語で」を受け、`i18n::demo_content_notice(lang)`(13言語)を
+  新設。従来`/board`ページに英語+日本語のみで固定表示していた通知文を、
+  この13言語版に置き換え(掲示板固有の保持時間の数値は引き続き英語+
+  日本語の併記のまま別枠で表示)、加えて「出店出品」に該当する
+  `/trade`(オンライン貿易プラットフォーム)ページにも同じ13言語通知を
+  新規掲示。`main.rs`に`render_demo_notice(lang)`ヘルパーを追加。
+  - **検証**: `cargo test`で28件全green(既存のまま、通知文自体は
+    静的文字列でロジック変更が無いため新規テストは追加せず)。実バイナリを
+    起動し、`/trade`と`/board`の両方を英語・日本語・簡体字中国語・
+    繁体字中国語(台湾)・韓国語で実際にcurl取得し、各言語で期待される
+    文字列(例: 簡体字「样品/演示网站」「自动删除」、繁体字「樣品/展示
+    網站」「自動刪除」、韓国語「샘플·데모」「자동으로 삭제」)が実際に
+    含まれることを確認済み(ビルド成功のみでの完了報告ではない)。
+  - 次にすべきこと: `/credit`・`/realestate`ページも将来的に実際の
+    出品・申込機能を持つ場合は、同じ通知を追加することを検討。
+
+- **2026-07-18(続き) WEB商談・Google Meet TV CHATコーナーを新規実装**:
+  ユーザー指示「WEB商談や世界中とのGoogle meet TVCHATコーナーも設けて、
+  書き込みは古くなると自動削除しますと英語と日本語で見やすく書いて」を
+  受け、`/board`ページを新設。
+  - **`src/board.rs`(新規)**: プロセス内メモリ(`Mutex<Vec<Post>>`)のみで
+    完結する掲示板(DB非依存という既存方針に準拠、サーバー再起動で
+    消える点も「投稿は古くなると自動削除される」という性質と矛盾しない)。
+    `Category::{Negotiation, TvChat}`の2カテゴリ、投稿は既定72時間
+    (環境変数`E_GOV_BOARD_RETENTION_HOURS`で変更可)を過ぎると次回の
+    読み書き時に遅延パージされる。カテゴリごとの保持件数上限
+    (200件)も設定し、無制限な肥大化を防止。名前・本文の文字数上限、
+    HTMLエスケープ、Google Meet等のURLはクリック可能なリンクとして
+    描画。
+  - **`src/main.rs`**: `render_board_section`/`board_page`/`board_post`
+    ハンドラを追加、`GET /board`・`POST /board/post`をルート登録。
+    ナビに「商談・TV CHAT」リンクを追加。ページ最上部に
+    **英語+日本語で常に両方表示**される自動削除の注意書き
+    (`.retention-notice`、実際の保持時間を動的に埋め込み)を設置——
+    ユーザーが明示的に指定した「英語と日本語で見やすく」を、
+    既存の13言語切替とは別に**常時バイリンガル表示**として実装
+    (既存の`.sample-banner`と同じ設計思想)。定期パージタスクも
+    `spawn_periodic_tasks()`に追加(1時間毎、アクセスが無い間の
+    メモリ解放用の保険)。
+  - **`src/i18n.rs`**: `CommonStrings`に`nav_board`(13言語)、
+    `board_text()`(ページタイトル/見出し/導入文、13言語)、
+    `BoardStrings`/`board_strings()`(フォームラベル・見出し・
+    「まだ投稿がありません」等のUI文言、13言語)を追加。
+  - **検証**: `cargo build`成功、`cargo test`で新規4件(投稿追加+一覧
+    ラウンドトリップ・不正カテゴリ/空欄拒否・保持期限切れパージ・
+    HTMLエスケープ+Meetリンクのリンク化)含め計28件全green(1件、
+    テスト間で共有staticを操作し合う競合を発見・`Mutex`ベースの
+    直列化ロックで修正)。実バイナリを起動し`GET /board`
+    (en/ja、200)・`POST /board/post`(303→再度`GET /board`で
+    投稿内容が反映されること)をcurlで実際に確認済み(型チェックの
+    みでの完了報告ではない)。
+  - **正直なスコープの限界**: 認証・スパム対策(reCAPTCHA等)は無し
+    (誰でも投稿可能)、投稿はプロセス再起動で全消失(意図的な設計、
+    永続化しない)、上記いずれも現時点の「サンプル・デモンストレー
+    ション」段階の性質と整合すると判断。
+
+- **2026-07-18 LINE Webhookの応答を多言語対応(13言語)**: ユーザー指示
+  「LINE Webhookの応答(chat_commerce.rs)は引き続き日本語中心なので、
+  多言語対応して」に基づき、`chat_commerce.rs`を`i18n::Lang`対応に
+  書き換えた。
+  - **言語判定は2段構成**: (1) LINEプロフィールAPI
+    (`GET /v2/bot/profile/{userId}`、`line_webhook.rs`に新設した
+    `line_user_language()`)でユーザーのLINEアプリ設定言語を取得
+    (`E_GOV_LINE_CHANNEL_ACCESS_TOKEN`未設定・API失敗時は`None`)、
+    (2) 取得できない場合は`chat_commerce::detect_lang()`でメッセージ
+    本文のUnicodeスクリプト/特徴的な単語から簡易判定(ひらがな→日本語、
+    ハングル→韓国語、アラビア文字は固有文字の有無でペルシャ語/
+    アラビア語を区別、キリル文字は固有文字の有無でウクライナ語/
+    ロシア語を区別、漢字は繁体字特有文字の有無で台湾語/簡体中国語を
+    区別、ラテン文字は特徴語で伊/仏/独を判定、それ以外は英語既定)。
+  - 各カテゴリ(eガバメント/オンライン貿易/与信保証/不動産)の返信文は
+    `i18n::gov_text`等、サイト本体で既に翻訳済みのページ本文を再利用し、
+    二重管理を避けた。フォールバック応答文は13言語分を新規に用意。
+  - **正直な開示**: 言語判定は本格的な言語識別ライブラリ(fastText等)
+    ではなく、Unicodeスクリプト範囲+少数の特徴語によるヒューリスティック
+    (`chat_commerce.rs`冒頭コメント参照)。
+  - **検証**: `cargo build`/`cargo test`(24件全green、新規10件:
+    多言語キーワードマッチング4件+言語判定ヒューリスティック6件)。
+    実LINE環境(認証情報未設定)での動作確認は次回以降(アクセストークン
+    取得後)。
+
+- **2026-07-18 サイト本体の多言語切り替え機能を実装(13言語、英語既定)**:
+  `src/i18n.rs`を新設し、`Lang` enum(13言語)・`?lang=`クエリパラメータ
+  解析・共通文言(ナビ/バナー/フッター)・各ページ本文(TOP/gov/trade/
+  credit/realestate/research)の翻訳テキストを実装。`main.rs`の
+  `page_shell`と各ハンドラを`Query<LangQuery>`経由でLang対応に書き換え、
+  `<html lang="...">`とアラビア語・ペルシャ語向け`dir="rtl"`も自動設定。
+  ページ上部に13言語への切替リンクも追加。**検証**: `cargo build`/
+  `cargo test`(18件全green)、実バイナリで既定(パラメータ無し)が
+  英語になること、`?lang=ja`/`?lang=fr`等で正しく翻訳されたh1が
+  返ること、`?lang=ar`で`dir="rtl"`が設定されること、全6ページ×
+  4言語(en/ja/zh-cn/ar)が200を返すことを実際のHTTPリクエストで確認。
+  次にすべきこと: (1) Accept-Languageヘッダによる自動言語判定、
+  (2) サブページ本文を各言語でREADME-<言語>.md並みの詳細度まで拡張
+  するか検討(現状は簡潔な要約に統一)、(3) LINE Webhook側の応答
+  (`chat_commerce.rs`)は引き続き日本語+一部英語キーワードのみで、
+  ユーザーの言語に応じた多言語応答は未対応。
+
+- **2026-07-18 多言語対応の基本言語セット(13言語)README作成完了**:
+  `README.md`(日本語)を最新機能(GitHub自動クロール・LINE連携・
+  サンプルバナー)に合わせて更新し、`README-English.md`・
+  `README-England.md`(英国英語)・`README-Chinese.md`・
+  `README-Taiwan.md`・`README-Korea.md`・`README-Italy.md`・
+  `README-France.md`・`README-Germany.md`・`README-Arabic.md`・
+  `README-Iran.md`(ペルシャ語)・`README-Russia.md`・
+  `README-Ukraine.md`を新規作成(命名は`aruaru-db`の既存慣行
+  `README-<言語>.md`に準拠)。サイト本体(`src/main.rs`)の多言語切り替え
+  機能自体は引き続き未実装(v0.1.0では日本語のみ)——今回はドキュメント
+  レベルの多言語対応。
+
+- **2026-07-18 新規作成**: ユーザー構想(eガバメント×コンビニ端末×LINE×段階的
+  本人確認、オンライン貿易×不動産×AI工務店×AIチャットコマース、初期は
+  アドセンスでのサンプル運用)をもとに、エストニアX-Road・アゼルバイジャン
+  ASANの事例調査を行った上で本ドキュメントと最小構成コードを新規作成。
+  次回以降: (1) LINE Messaging API連携の技術調査、(2) コンビニ端末
+  (Loppi/Famiポート等)の外部連携APIが実在するか調査、(3) マイナンバー
+  カードのスマホNFC読み取り(公的個人認証JPKI)の実装方式調査、
+  (4) 電子契約(不動産売買・賃貸)に関わる法令(宅建業法・電子署名法)の調査、
+  (5) AI与信調査・掛け仕入れ・電子請求書重複調査・売掛保証機能に関わる
+  法令(貸金業法・割賦販売法・保険業法・下請代金支払遅延等防止法等)と、
+  既存の与信審査API・取引信用保険APIの調査。
+- **2026-07-18 デジタルガバメントの自動調査・自動マーケティング機能を追加**:
+  `src/research.rs`(日本語・英語での定期調査。GitHub Search APIは実際に
+  叩いて上位ヒットを取得、Google側はAPIキー未設定のため検索リンク生成
+  までに限定——非対称スコープを正直に開示)・`src/marketing.rs`
+  (告知ドラフトのテンプレート生成、外部SNS/LINEへの実投稿は未接続)を
+  新設。`main.rs`にサーバー起動時の自動定期実行(`tokio::time::interval`、
+  既定: 調査24h・マーケティング12h、環境変数で変更可)と、手動即時実行用
+  CLI引数(`--research-all`/`--marketing-all`)を配線。`/research`ページを
+  追加しユーザー向けに機能とスコープの限界を説明。
+- **2026-07-18 「サンプル・デモンストレーションサイト」であることを明記**:
+  ユーザー指示により、電子公証・電子契約(電子交渉を経た法的拘束力のある
+  契約締結)は正式な許可が下りるまで実装しない方針を追記(本ドキュメント
+  冒頭の🚧注記参照)。あわせて多言語対応の基本言語セット(日本語・英語
+  (米/英)・中国語・台湾語・韓国語・伊・仏・独・アラビア語・ペルシャ語・
+  ロシア語・ウクライナ語)を追記。次回以降: (6) 上記言語セットの
+  `README-<言語>.md`群の整備、(7) `/credit`・`/realestate`ページに
+  「これはデモであり法的効力を持つ契約締結機能ではない」旨の明示。
+
+## API 方針: REST 全廃・gRPC / Connect へ (2026-11-04)
+
+### 日本語
+- **REST は全廃する。新しい API は REST で作らない。** ブラウザや `curl` から呼ぶ API は **Connect の単純呼び出し**(`POST /<パッケージ>.<Service>/<Method>`、`content-type: application/json`、本文は JSON)、サービス間は **gRPC / gRPC-web**(RPoem の管理API `open_runo.admin.v1.Admin` と同じ流儀)。ストリーミングは、必要になってから。
+- **既存の REST は、触るときに順に移す。** 移したら旧 REST の経路は消す。移行が終わるまで残るが、**新規には追加しない**。
+- **JSON は RS-JSON に統一**する(読み込みは `from_str_secure` / `parse_secure` でサイズ・深さ・重複キーの上限つき、書き出しは `rust_json::fast`)。ブラウザの WASM に `prost` は入れない(サイズが増えるため)。
+- **例外(自分たちの API ではなく、相手の規格が決めているもの)**: ACME、OAuth/OIDC のコールバック、第三者(GitHub など)からの Webhook、ヘルスチェック、静的ファイル配信、OTLP など。これらは規格どおりの HTTP を受ける。
+- 参考実装: `RPoem`(`open_runo.admin.v1.Admin`)、`open-easy-web`(`server/src/connect.rs`、`proto/open_easy_web/admin/v1/admin.proto`)。
+- ※ このリポジトリのコードが既に方針どおりかどうかは、各リポジトリの現状による。この節は方針の記録であり、コードの変更を意味しない。
+
+### English
+- **REST is being abolished. New APIs are not built as REST.** APIs called from browsers or `curl` use **Connect unary calls** (`POST /<package>.<Service>/<Method>`, `content-type: application/json`, JSON body); service-to-service calls use **gRPC / gRPC-web** (the same style as RPoem's admin API `open_runo.admin.v1.Admin`). Streaming only when it is actually needed.
+- **Existing REST endpoints are migrated one by one, when they are touched.** The old REST route is removed once migrated. Until migration is finished they remain, but **no new ones are added**.
+- **JSON is unified on RS-JSON**: reading with `from_str_secure` / `parse_secure` (size, depth and duplicate-key limits), writing with `rust_json::fast`. `prost` is not put into browser WASM (it would grow the binary).
+- **Exceptions (shapes dictated by someone else's standard, not our own API)**: ACME, OAuth/OIDC callbacks, webhooks from third parties (e.g. GitHub), health checks, static file serving, OTLP, and so on. These accept plain HTTP as the standard requires.
+- Reference implementations: `RPoem` (`open_runo.admin.v1.Admin`) and `open-easy-web` (`server/src/connect.rs`, `proto/open_easy_web/admin/v1/admin.proto`).
+- Note: whether the code in a given repository already follows this policy depends on that repository. This section records the policy; it does not mean the code has been changed.
+
+### Deutsch (KI-Übersetzung, redaktionell überarbeitet; noch nicht von Muttersprachlern geprüft)
+- **REST wird vollständig abgeschafft; neue APIs entstehen nicht mehr als REST.** APIs, die aus dem Browser oder per `curl` aufgerufen werden, verwenden **unäre Connect-Aufrufe** (`POST /<Paket>.<Service>/<Methode>`, `content-type: application/json`, JSON-Body). Zwischen Diensten kommen **gRPC bzw. gRPC-web** zum Einsatz, im selben Stil wie die Admin-API von RPoem (`open_runo.admin.v1.Admin`). Streaming wird erst ergänzt, wenn es tatsächlich gebraucht wird.
+- **Bestehende REST-Endpunkte werden schrittweise umgestellt, und zwar immer dann, wenn man ohnehin an ihnen arbeitet.** Sobald ein Endpunkt umgestellt ist, wird die alte REST-Route entfernt. Bis zum Abschluss der Migration bleiben die übrigen bestehen, es werden aber **keine neuen mehr hinzugefügt**.
+- **JSON wird einheitlich über RS-JSON verarbeitet**: Gelesen wird mit `from_str_secure` bzw. `parse_secure` (mit Obergrenzen für Größe, Verschachtelungstiefe und doppelte Schlüssel), geschrieben mit `rust_json::fast`. `prost` wird nicht in das Browser-WASM aufgenommen, da es die Datei vergrößern würde.
+- **Ausnahmen (Schnittstellen, deren Form ein fremder Standard vorgibt und die nicht zu unserer eigenen API gehören)**: ACME, OAuth/OIDC-Callbacks, Webhooks von Drittanbietern (z. B. GitHub), Health-Checks, die Auslieferung statischer Dateien, OTLP und Ähnliches. Diese nehmen, wie vom jeweiligen Standard verlangt, gewöhnliches HTTP entgegen.
+- Referenzimplementierungen: `RPoem` (`open_runo.admin.v1.Admin`) und `open-easy-web` (`server/src/connect.rs`, `proto/open_easy_web/admin/v1/admin.proto`).
+- Hinweis: Ob der Code eines einzelnen Repositorys diese Richtlinie bereits erfüllt, hängt vom jeweiligen Repository ab. Dieser Abschnitt dokumentiert lediglich die Richtlinie; er besagt nicht, dass der Code schon angepasst wurde.
+
+### Русский (перевод выполнен с помощью ИИ и отредактирован; носителями языка пока не проверен)
+- **От REST мы полностью отказываемся; новые API больше не создаются в стиле REST.** API, к которым обращаются из браузера или через `curl`, используют **унарные вызовы Connect** (`POST /<пакет>.<Service>/<Method>`, `content-type: application/json`, тело запроса — JSON). Для взаимодействия между сервисами применяются **gRPC и gRPC-web** — в том же стиле, что и административный API RPoem (`open_runo.admin.v1.Admin`). Потоковая передача данных добавляется лишь тогда, когда в ней действительно возникает необходимость.
+- **Существующие REST-эндпоинты переводятся поэтапно — по мере того, как с ними приходится работать.** После перевода старый REST-маршрут удаляется. Пока миграция не завершена, оставшиеся эндпоинты сохраняются, но **новые не добавляются**.
+- **Работа с JSON унифицирована на основе RS-JSON**: чтение — через `from_str_secure` или `parse_secure` (с ограничениями на размер, глубину вложенности и повторяющиеся ключи), запись — через `rust_json::fast`. `prost` в браузерный WASM не включается, поскольку это увеличило бы размер файла.
+- **Исключения (интерфейсы, форму которых определяет чужой стандарт, а не наш собственный API)**: ACME, обратные вызовы OAuth/OIDC, вебхуки сторонних сервисов (например, GitHub), проверки работоспособности, раздача статических файлов, OTLP и тому подобное. Такие интерфейсы принимают обычный HTTP, как того требует соответствующий стандарт.
+- Эталонные реализации: `RPoem` (`open_runo.admin.v1.Admin`) и `open-easy-web` (`server/src/connect.rs`, `proto/open_easy_web/admin/v1/admin.proto`).
+- Примечание: соответствует ли код конкретного репозитория этой политике, зависит от самого репозитория. Данный раздел лишь фиксирует политику и не означает, что код уже изменён.
+
+## API 方針の補足: 用語の整理と使い分け (2026-11-04)
+
+### 日本語
+**1つに統一するものではなく、別の層の話です。** 「REST の代わり」になるのは Connect・gRPC・GraphQL だけで、WASM は画面を作る技術です。
+
+| 用語 | 何か | REST の代わりか |
+|---|---|---|
+| REST | URL と HTTP メソッドで操作を表す API の作り方 | 全廃する側 |
+| **Connect** | `POST /サービス名/メソッド名` に JSON を送る形式。`curl` でもブラウザの `fetch` でも呼べる | はい(**採用**) |
+| **gRPC** | 同じ「サービス/メソッド」の考え方を、バイナリ(protobuf)と HTTP/2 で行う形式。速く、ストリーミングも得意 | はい(**サービス同士に採用**) |
+| gRPC-web | gRPC のブラウザ向けの変形版 | はい(必要なら) |
+| GraphQL | 欲しい項目を問い合わせる形式 | 一部だけ(**問い合わせ(読み取り)専用**) |
+| WASM | Rust をブラウザの中で動かす仕組み | いいえ(画面を作る技術) |
+
+- **ブラウザの画面や `curl` から呼ぶ API は Connect**(POST、JSON を RS-JSON で読み書き)。ブラウザの WASM は素の gRPC を話せず、Connect なら `fetch` のままで、`prost` を足さずに済む(画面のサイズも増えない)。
+- **サービス同士の通信(サーバー間、重い処理、ストリーミング)は gRPC。** 多くは Connect で足りるので、ストリーミングが必要になった所だけ gRPC に上げる。
+- **GraphQL は、まとめて問い合わせたいときの読み取り専用。** 書き込み(操作)には使わない。
+- **WASM は画面を作る技術として、そのまま使う。** 画面から呼ぶ API が Connect になっただけ。
+- 外部の規格が形を決めるもの(ACME、OAuth のコールバック、第三者の Webhook、ヘルスチェック、静的ファイル、OTLP)は、規格どおりの HTTP のまま。
+- **迷ったら Connect。**
+
+### English
+**These are not alternatives to unify; they sit at different layers.** Only Connect, gRPC and GraphQL can replace REST; WASM is a way to build the UI.
+
+| Term | What it is | Replaces REST? |
+|---|---|---|
+| REST | API style that expresses operations through URLs and HTTP methods | The thing being abolished |
+| **Connect** | `POST /Service/Method` with a JSON body; callable from `curl` and from a browser `fetch` | Yes (**adopted**) |
+| **gRPC** | The same service/method idea over binary (protobuf) and HTTP/2; fast, good at streaming | Yes (**for service-to-service**) |
+| gRPC-web | A browser-friendly variant of gRPC | Yes (if needed) |
+| GraphQL | A query language: ask for exactly the fields you want | Partly (**read-only queries**) |
+| WASM | Runs Rust inside the browser | No (a UI technology) |
+
+- **APIs called from browser screens or `curl` use Connect** (POST, JSON read and written with RS-JSON). Browser WASM cannot speak plain gRPC; with Connect it stays a `fetch`, and `prost` is not needed (the binary does not grow).
+- **Service-to-service calls (server to server, heavy work, streaming) use gRPC.** Connect is enough in most places; move a call to gRPC only where streaming is actually needed.
+- **GraphQL is read-only**, for queries that gather several pieces of data. It is not used for writes (operations).
+- **WASM stays as the way to build the UI.** The API it calls simply became Connect.
+- Interfaces whose shape an outside standard dictates (ACME, OAuth callbacks, third-party webhooks, health checks, static files, OTLP) stay plain HTTP.
+- **When in doubt, use Connect.**
+
+### Deutsch (KI-Übersetzung, sprachlich überarbeitet; noch nicht von Muttersprachlern geprüft)
+**Es geht nicht darum, eine einzige Technik auszuwählen – die Begriffe liegen auf unterschiedlichen Ebenen.** Als Ersatz für REST kommen nur Connect, gRPC und GraphQL in Frage; WASM dagegen ist eine Technik, mit der die Benutzeroberfläche gebaut wird.
+
+| Begriff | Was ist das? | Ersatz für REST? |
+|---|---|---|
+| REST | Ein API-Stil, bei dem Operationen über URLs und HTTP-Methoden ausgedrückt werden | wird abgeschafft |
+| **Connect** | `POST /Dienst/Methode` mit JSON im Body; aufrufbar mit `curl` ebenso wie mit `fetch` im Browser | ja (**gewählt**) |
+| **gRPC** | Dasselbe Prinzip aus Dienst und Methode, aber über binäres protobuf und HTTP/2; schnell und gut für Streaming geeignet | ja (**zwischen Diensten**) |
+| gRPC-web | Eine für den Browser angepasste Variante von gRPC | ja (bei Bedarf) |
+| GraphQL | Abfragesprache, mit der man genau die benötigten Felder anfordert | teilweise (**nur für lesende Abfragen**) |
+| WASM | Führt Rust-Code direkt im Browser aus | nein (Technik für die Oberfläche) |
+
+- **APIs, die von Browseroberflächen oder per `curl` aufgerufen werden, verwenden Connect** (POST; JSON wird mit RS-JSON gelesen und geschrieben). WASM im Browser kann kein reines gRPC sprechen. Mit Connect bleibt es bei einem gewöhnlichen `fetch`, und `prost` ist nicht nötig – die WASM-Datei wird dadurch nicht größer.
+- **Für die Kommunikation zwischen Diensten (Server zu Server, rechenintensive Aufgaben, Streaming) wird gRPC eingesetzt.** In den meisten Fällen reicht Connect aus; auf gRPC wird nur dort umgestellt, wo Streaming tatsächlich gebraucht wird.
+- **GraphQL dient ausschließlich lesenden Abfragen**, wenn mehrere Informationen gebündelt abgefragt werden sollen. Für Schreibzugriffe (Operationen) wird es nicht verwendet.
+- **WASM bleibt die Technik für die Oberfläche.** Geändert hat sich lediglich, dass die aufgerufene API nun auf Connect beruht.
+- Schnittstellen, deren Form durch einen externen Standard festgelegt ist (ACME, OAuth-Callbacks, Webhooks von Drittanbietern, Health-Checks, statische Dateien, OTLP), bleiben gewöhnliches HTTP.
+- **Im Zweifel: Connect.**
+
+### Русский (перевод выполнен с помощью ИИ и литературно отредактирован; носителями языка пока не проверен)
+**Это не варианты, из которых нужно выбрать один, а технологии разных уровней.** Заменить REST могут только Connect, gRPC и GraphQL; WASM же — это способ создания пользовательского интерфейса.
+
+| Термин | Что это | Заменяет REST? |
+|---|---|---|
+| REST | Стиль построения API, при котором операции выражаются через URL и HTTP-методы | отменяется |
+| **Connect** | `POST /Сервис/Метод` с телом в формате JSON; вызывается как из `curl`, так и из браузерного `fetch` | да (**выбран**) |
+| **gRPC** | Тот же принцип «сервис — метод», но поверх двоичного формата protobuf и HTTP/2; работает быстро и хорошо подходит для потоковой передачи | да (**для связи между сервисами**) |
+| gRPC-web | Адаптированный для браузера вариант gRPC | да (при необходимости) |
+| GraphQL | Язык запросов: клиент запрашивает ровно те поля, которые ему нужны | частично (**только запросы на чтение**) |
+| WASM | Позволяет выполнять код на Rust прямо в браузере | нет (технология для интерфейса) |
+
+- **API, которые вызываются из браузерных интерфейсов или через `curl`, строятся на Connect** (POST; JSON читается и записывается через RS-JSON). Браузерный WASM не умеет работать с «чистым» gRPC. С Connect достаточно обычного `fetch`, а `prost` не требуется — размер WASM-файла не увеличивается.
+- **Для обмена между сервисами (сервер — сервер, ресурсоёмкие задачи, потоковая передача) применяется gRPC.** В большинстве случаев достаточно Connect; на gRPC переходят только там, где потоковая передача действительно необходима.
+- **GraphQL используется только для чтения**, когда нужно получить сразу несколько связанных данных. Для записи (операций) он не применяется.
+- **WASM по-прежнему остаётся технологией для интерфейса.** Изменилось лишь то, что вызываемый им API теперь построен на Connect.
+- Интерфейсы, форма которых задана внешним стандартом (ACME, обратные вызовы OAuth, вебхуки сторонних сервисов, проверки работоспособности, статические файлы, OTLP), остаются обычным HTTP.
+- **Если есть сомнения — выбирайте Connect.**
+
+## REST全廃・Connect化(2026-11-07)
+- 掲示板の投稿 `POST /board/post`(HTMLフォーム送信→303)を削除(404)し、**`POST /e_gov.v1.Board/AddPost`**(JSON本文 `{category,name,message,meet_link,lang}`)へ移した。ページのフォームは小さな`fetch`に変更(JS無効の環境では投稿できなくなる)。
+- 本文はRS-JSON `from_str_secure`(16KiB・深さ・重複キー拒否)。エラーは `{"code","message"}`(400)、成功は `{}`。
+- 確認: 実サーバーで `curl`(正常200・不明カテゴリ400・重複キー400・20KB超400・旧経路404・ページに投稿反映とスクリプト出力)。ブラウザでの目視は未実施、本番(VPS)反映は未実施。
+- 例外: `POST /webhook/line`(LINEの第三者Webhook、HMAC検証)・`/healthz`・各HTMLページ(GET)。
