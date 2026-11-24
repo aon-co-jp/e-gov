@@ -1,3 +1,5 @@
+> Latest translations / 翻訳の最新版: [0-LATEST-TRANSLATIONS.md](0-LATEST-TRANSLATIONS.md)
+
 # e-gov.info
 
 行政(お役所・政府)のデジタル化と、個人〜貿易商社まで対応するオンライン貿易・

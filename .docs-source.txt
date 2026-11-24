@@ -1,3 +1,3 @@
 source: aon-co-jp/e-gov
-commit: 5f2fd52789598ba4083fb7b23fc465328f74b133
-updated: 2026-11-20T14:35:26Z
+commit: e5b2fe81dafd08f9182cefcfe2dfe08e8dcd8158
+updated: 2026-11-24T10:40:28Z
